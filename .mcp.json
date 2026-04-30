@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "model-scout": {
+      "command": "npx",
+      "args": ["-y", "model-scout-mcp"],
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+      }
+    }
+  }
+}

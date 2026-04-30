@@ -46,7 +46,7 @@ The OpenRouter catalog is large and changes weekly. These skills:
 claude plugins install ai-model-research@danielrosehill
 ```
 
-Set `OPENROUTER_API_KEY` in your environment so the MCP server can authenticate.
+No API key required — the OpenRouter catalog endpoint (`/api/v1/models`) is unauthenticated, and so are all the skills and MCP tools in this plugin. (You only need an `OPENROUTER_API_KEY` if you want to actually *call* a model through OpenRouter, which this plugin doesn't do — it's research-only.)
 
 ## Usage
 

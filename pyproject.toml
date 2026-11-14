@@ -1,7 +1,7 @@
 [project]
 name = "ai-model-research-cli"
 version = "1.0"
-description = "Unofficial thin CLIs for AI model research: orexplorer (OpenRouter catalogue, batch, trending, benchmarks)."
+description = "Unofficial thin CLIs for AI model research: orexplorer (OpenRouter catalogue, batch, trending, benchmarks) and hubexplorer (Hugging Face Hub discovery by task and filter). Not affiliated with OpenRouter or Hugging Face."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -9,6 +9,7 @@ dependencies = []
 
 [project.scripts]
 orexplorer = "orexplorer:main"
+hubexplorer = "hubexplorer:main"
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -16,4 +17,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = { "" = "scripts" }
-py-modules = ["orexplorer"]
+py-modules = ["orexplorer", "hubexplorer"]

@@ -1,0 +1,43 @@
+{
+  "transcription": {
+    "about": "Speech to text: transcription, dictation, subtitles, voice typing. Dedicated ASR models and audio-language models both do it, and they are filed under different tasks.",
+    "tasks": ["automatic-speech-recognition", "audio-text-to-text", "any-to-any"],
+    "words": ["transcription", "transcribe", "dictation", "speech to text", "stt", "asr", "subtitles", "captions", "voice typing"],
+    "notes": "automatic-speech-recognition holds dedicated ASR (Whisper family, Parakeet, Canary, wav2vec2 fine-tunes). audio-text-to-text holds audio-language models (Voxtral, Qwen-Audio, Granite Speech, Phi multimodal) that transcribe when prompted and can also translate, summarise or follow instructions. any-to-any holds omni models that may take audio in. Check language tags, streaming support, word timestamps, and export formats (CTranslate2, ONNX, sherpa-onnx, GGUF, whisper.cpp) for on-device dictation."
+  },
+  "speech-synthesis": {
+    "about": "Text to speech and voice generation.",
+    "tasks": ["text-to-speech", "text-to-audio", "any-to-any"],
+    "words": ["tts", "text to speech", "voice", "speech synthesis", "voice cloning", "narration"]
+  },
+  "audio-enhancement": {
+    "about": "Clean, separate or transform audio: denoise, dereverb, source separation, voice conversion.",
+    "tasks": ["audio-to-audio", "voice-activity-detection"],
+    "words": ["denoise", "noise", "enhancement", "separation", "voice conversion", "vad", "dereverb"]
+  },
+  "video-generation": {
+    "about": "Make or change video.",
+    "tasks": ["text-to-video", "image-to-video", "image-text-to-video", "video-to-video"],
+    "words": ["video generation", "make a video", "animate", "video editing", "restyle", "upscale video"]
+  },
+  "image-editing": {
+    "about": "Change an existing image with or without a prompt.",
+    "tasks": ["image-to-image", "image-text-to-image", "mask-generation", "image-segmentation"],
+    "words": ["image editing", "inpaint", "outpaint", "upscale", "restyle", "background removal"]
+  },
+  "document-understanding": {
+    "about": "Read documents, forms, screenshots and scans.",
+    "tasks": ["image-text-to-text", "document-question-answering", "image-to-text", "visual-document-retrieval"],
+    "words": ["ocr", "document", "pdf", "form", "invoice", "scan", "receipt"]
+  },
+  "embeddings-and-retrieval": {
+    "about": "Vectors and ranking for search and RAG.",
+    "tasks": ["feature-extraction", "sentence-similarity", "text-ranking", "visual-document-retrieval"],
+    "words": ["embedding", "embeddings", "rag", "retrieval", "rerank", "reranker", "semantic search"]
+  },
+  "vision-language": {
+    "about": "Models that look at images or video and answer in text.",
+    "tasks": ["image-text-to-text", "video-text-to-text", "visual-question-answering"],
+    "words": ["vlm", "vision language", "describe image", "caption", "video understanding"]
+  }
+}

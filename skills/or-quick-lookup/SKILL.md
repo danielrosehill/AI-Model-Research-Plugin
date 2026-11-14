@@ -16,13 +16,13 @@ Retrieve a single model's essential metadata from OpenRouter: pricing, context l
 
 ## Inputs to gather
 
-- Model ID (slash-form, e.g. `anthropic/claude-3.5-sonnet` or `openai/gpt-4o`)
+- Model ID (slash-form, e.g. `openai/gpt-4o` or `google/gemini-2.5-flash`)
 
 ## Procedure
 
-1. Call `mcp__model-scout__get_model` with the model ID.
-2. Extract and summarize: input pricing per 1M tokens, output pricing per 1M tokens, context length, supported modalities (text, vision, audio, etc.), and provider name.
-3. Return a 1–2 sentence summary with the key facts.
+1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <id> --brief` (JSON; prices are US$ per 1M tokens). If it errors with "no model", the ID is wrong: try `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py models -q <fragment> --table`.
+2. Read `summary`: `input_per_m`, `output_per_m`, `context`, `max_output`, `input`/`output` modalities, `caps` (tools, vision, reasoning, ...), `batch`, `knowledge_cutoff`, `variants` (e.g. `:free`, `:batch`). Null prices mean a router model.
+3. Return a 1-2 sentence summary with the key facts.
 
 ## Output / side effects
 

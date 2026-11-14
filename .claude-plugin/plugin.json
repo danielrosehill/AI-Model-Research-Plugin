@@ -1,12 +1,21 @@
 {
   "name": "ai-model-research",
-  "version": "1.0.0",
-  "description": "Research, discover, compare, and evaluate AI models on OpenRouter — backed by the Model-Scout MCP server for live catalog data with caching. Subsumes the standalone open-router-model-research plugin and the Model-Scout-MCP server. Skills cover lookup, capability filtering (tools, vision, audio), recommendation, head-to-head comparison, deep evaluation, workload cost projection, and finding cheaper alternatives.",
+  "version": "1.1.0",
+  "description": "Research AI models: discover, filter, compare and evaluate. Built on small unofficial read-only CLIs: orexplorer for OpenRouter (capabilities, batch support, prices, providers, new and trending models, benchmarks), with the Hugging Face Hub being merged in. Skills cover lookup, capability filtering, recommendation, comparison, deep evaluation, cost projection and alternatives.",
   "author": {
     "name": "Daniel Rosehill",
     "url": "https://github.com/danielrosehill"
   },
   "repository": "https://github.com/danielrosehill/Claude-AI-Model-Research-Plugin",
   "license": "MIT",
-  "keywords": ["ai", "llm", "openrouter", "model-research", "mcp", "model-scout"]
+  "keywords": [
+    "ai",
+    "llm",
+    "openrouter",
+    "model-research",
+    "cli",
+    "batch",
+    "trending",
+    "huggingface"
+  ]
 }

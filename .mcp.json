@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "model-scout": {
-      "command": "npx",
-      "args": ["-y", "model-scout-mcp"]
-    }
-  }
-}

@@ -5,7 +5,7 @@ description: Use when the user wants a deep evaluation of a single OpenRouter mo
 
 # Evaluate an OpenRouter Model in Depth
 
-Conduct a thorough evaluation of a single model the user is considering. Combine OpenRouter catalog data with external research — Hugging Face model card, original paper, license, benchmark coverage, community feedback — to give the user a confident go/no-go answer.
+Conduct a thorough evaluation of a single model the user is considering. Combine OpenRouter data (via the bundled CLI) with external research — Hugging Face model card, original paper, license, benchmark coverage, community feedback — to give the user a confident go/no-go answer.
 
 ## When to use
 
@@ -15,13 +15,20 @@ The user has shortlisted a model (often from `or-recommend-model` or `or-compare
 
 ### Step 1: Catalog snapshot
 
-Fetch the OpenRouter catalog and extract the target model's full record:
+CLI: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py` (JSON default, `--table` for humans). Prices are US$ per 1M tokens.
 
 ```bash
-curl -s https://openrouter.ai/api/v1/models -H "Accept: application/json"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <id>             # summary + variants + full raw record
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py endpoints <id>         # providers: price, quantization, uptime, context
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py benchmarks --list      # categories: agentic, coding, intelligence
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py benchmarks <category> --limit 0   # find the model's Artificial Analysis score and rank
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py performance -q <id>    # p50 latency / throughput
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py trending               # is it actually being used (tokens this week)?
 ```
 
-Capture: id, context_length, modalities, pricing, supported_parameters, top_provider info, description, created date.
+Capture: context, modalities, prices, caps, knowledge cutoff, `hf` link (if set, use it for the model card), description, created date, provider spread and quantization.
+
+`benchmarks`, `performance` and `trending` scrape openrouter.ai/rankings (undocumented, may break or change). If they fail, say so and continue. A model absent from a benchmark list is simply not shown there, not proof it scores badly.
 
 ### Step 2: External research
 
@@ -31,7 +38,7 @@ Go beyond the OR catalog. Use the available research tools (WebFetch, web search
 2. **Original paper** — if the model has an arXiv paper, summarize key claims (architecture, training scale, headline benchmarks).
 3. **Provider's own announcement / docs** — for proprietary models (OpenAI, Anthropic, Google), pull from official pages.
 4. **License** — clearly state the licence and any commercial-use restrictions. This is especially important for Llama, Qwen, DeepSeek, Mistral families.
-5. **Benchmark coverage** — what public benchmarks has it been tested on? Headline scores on MMLU, HumanEval, GSM8K, SWE-bench, etc. — but only cite scores you can actually find, never from memory.
+5. **Benchmark coverage** — start with the `benchmarks` scores from Step 1 (cite as Artificial Analysis via openrouter.ai/rankings). Then look for others: Headline scores on MMLU, HumanEval, GSM8K, SWE-bench, etc. — but only cite scores you can actually find, never from memory.
 6. **Known limitations / failure modes** — what is the model bad at? Reasoning depth, multilingual gaps, hallucination rates, refusal behavior?
 7. **Community reception** — recent discussion, reviews, or notable usage reports if findable.
 
@@ -53,7 +60,10 @@ Output a structured evaluation report:
 
 ## OpenRouter Catalog Snapshot
 - Context: ...
-- Pricing: ... / 1M prompt, ... / 1M completion
+- Pricing: ... / 1M prompt, ... / 1M completion (cheapest provider: ...)
+- Providers / quantization / uptime: ...
+- Speed (p50 latency, tokens/s): ...
+- Rankings scores (agentic / coding / intelligence): ...
 - Modalities: ...
 - Supported parameters: ...
 

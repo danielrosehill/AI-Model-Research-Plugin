@@ -24,11 +24,13 @@ Estimate the total cost of running a specific workload (defined by request volum
 
 ## Procedure
 
-1. Call `mcp__model-scout__consider_models` with the model ID(s), workload parameters, and cost-projection intent.
-2. For each model, retrieve input and output pricing (per 1M tokens).
-3. Calculate total cost: (input_tokens × input_price/1M) + (output_tokens × output_price/1M), multiplied by request count.
-4. If a daily rate was given, extrapolate to monthly (×30) and annual (×365).
-5. Present results as a table ranked by cheapest-first, showing per-model totals and absolute cost spread (difference vs. cheapest option).
+CLI: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py`; prices in its output are US$ per 1M tokens.
+
+1. For each model ID: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <id> --brief` and read `summary.input_per_m` and `summary.output_per_m`. A model with null prices is a router: ask the user for a concrete model instead. If the user wants to know the cheapest provider, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py endpoints <id>` gives per-provider prices.
+2. Compute per request: `input_tokens/1e6 * input_per_m + output_tokens/1e6 * output_per_m`. Multiply by request count.
+3. If a daily rate was given, extrapolate to monthly (x30) and annual (x365).
+4. If the job is not latency-sensitive and `summary.batch` is true, also project the `:batch` variant: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <id>:batch --brief` (check its prices; do not assume a discount).
+5. Present a table ranked cheapest-first with per-model totals and the cost spread vs. the cheapest.
 
 ## Output / side effects
 
@@ -36,4 +38,4 @@ User receives a cost table with per-model totals, monthly/annual projections if 
 
 ## Safety / constraints
 
-Cost estimates are based on published OpenRouter pricing at the time of the lookup. Actual usage may incur additional fees (e.g., cache writes). Confirm workload assumptions with the user before committing.
+Cost estimates are based on published OpenRouter pricing at the time of the lookup. Actual usage may incur additional fees (e.g., cache writes, per-image or web-search fees, reasoning tokens billed as output). Confirm workload assumptions with the user before committing.

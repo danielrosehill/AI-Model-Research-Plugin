@@ -21,11 +21,16 @@ If a model ID is ambiguous or not found in the catalog, ask for clarification be
 
 ### Step 2: Fetch catalog data
 
+CLI: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py` (stdlib, no API key). JSON on stdout by default; `--table` for a human view; `--compact` for one-line JSON. Prices are already US$ per 1M tokens. Router entries (`openrouter/auto`, ...) have null prices (shown `-`): they route dynamically, so exclude them from price rankings.
+
+For each model:
+
 ```bash
-curl -s https://openrouter.ai/api/v1/models -H "Accept: application/json"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <id> --brief     # price, context, modalities, caps, batch, knowledge cutoff, variants
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py endpoints <id>         # per-provider price, quantization, uptime (add when price/reliability matters)
 ```
 
-Extract each target model's record.
+`--brief` omits the raw record. Use full `model <id>` only if you need `pricing.image`, `top_provider`, `per_request_limits` or the tokenizer. Optionally add `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py performance -q <id>` for p50 latency/throughput (scrapes openrouter.ai/rankings, undocumented, may break; say so if used).
 
 ### Step 3: Build the comparison table
 
@@ -40,13 +45,14 @@ Render a markdown table with one column per model and one row per dimension. Rec
 | Output modalities | | |
 | Prompt $/1M tokens | | |
 | Completion $/1M tokens | | |
-| Image $/each (if vision) | | |
+| Image $/each (if vision, from full record) | | |
 | Tool use support | yes/no | yes/no |
 | Structured outputs | yes/no | yes/no |
-| Tokenizer | | |
+| Tokenizer (full record) | | |
 | Created (date) | | |
-| Top provider context | | |
-| Per-request limits | | |
+| Reasoning / batch support | | |
+| Providers, uptime (from `endpoints`) | | |
+
 
 ### Step 4: Add a written summary
 
@@ -62,6 +68,6 @@ End with: "Want me to research either of these models beyond the OR catalog (mod
 
 ## Notes
 
-- Don't bring in benchmark scores or qualitative judgments from memory. Stick to catalog facts in the table. Save subjective comparisons for the summary, and clearly mark them as your interpretation.
+- Don't bring in benchmark scores or qualitative judgments from memory. Stick to CLI facts in the table. Save subjective comparisons for the summary, and clearly mark them as your interpretation.
 - If comparing more than 3 models, the table gets unwieldy — suggest grouping into pairs or running a recommendation flow instead.
 - If two models are nearly identical (same family, e.g. `gpt-4o` vs `gpt-4o-2024-08-06`), say so explicitly and explain what differs (typically date / pricing tier).

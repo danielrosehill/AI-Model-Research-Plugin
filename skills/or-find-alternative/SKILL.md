@@ -22,11 +22,17 @@ Search for substitute models on OpenRouter that match the user's reference model
 
 ## Procedure
 
-1. Call `mcp__model-scout__get_model` with the reference model ID; extract its specs: pricing, context length, modalities, tool support, approximate quality tier, and provider.
-2. Call `mcp__model-scout__consider_models` with the reference model's capabilities as filters and an "alternatives" intent, specifying the user's optimization goal (e.g. lower cost, same quality).
-3. Retrieve 3–5 candidate models; calculate per-1M-token pricing for each (input + output combined).
-4. Rank by the user's constraint (cheapest-first if cost-driven; quality-tier if quality-driven).
-5. For each candidate, explicitly list: model ID, pricing (input/output per 1M), context window, capability deltas vs. reference (gained, lost, same).
+CLI: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py`; prices in its output are US$ per 1M tokens.
+
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py model <ref-id> --brief`: note `input_per_m`, `output_per_m`, `context`, `input` modalities, `caps` (tools, structured, reasoning, ...), author.
+2. Find candidates with the reference's capabilities as filters, e.g.:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py models --cap tools --cap vision --min-context 128000 --max-in <ref_in> --max-out <ref_out> --sort price --limit 15
+   ```
+   Add `--cap` for each capability that must be kept (`tools`, `vision`, `audio-in`, `structured`, `json`, `reasoning`, `caching`, ...; `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py capabilities` lists them), `--author` to stay in or leave a vendor, `--batch` if batch pricing is acceptable. Set `--max-in/--max-out` to the reference prices for a cost-driven search. Add `--include-free` to also see `:free` variants.
+3. Pick 3-5 candidates (drop router entries with null prices). For quality-driven searches, check `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py benchmarks intelligence --limit 0` (or `coding`/`agentic`) to see which candidates rank near the reference; this scrapes openrouter.ai/rankings (undocumented, may break; say so). Without benchmark data, do not assert quality parity.
+4. Rank by the user's constraint (cheapest-first if cost-driven; benchmark rank if quality-driven; `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py performance -q <id>` if speed-driven).
+5. For each candidate list: model ID, input/output per 1M, context, capability deltas vs. reference (gained, lost, same), and the price ratio vs. reference.
 
 ## Output / side effects
 

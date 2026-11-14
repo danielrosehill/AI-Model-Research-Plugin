@@ -29,13 +29,20 @@ Don't ask all seven if the user has already answered some. If you have enough to
 
 ### Step 2: Filter the catalog
 
-Fetch `https://openrouter.ai/api/v1/models` and apply filters:
+CLI: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py` (JSON default, `--table` for humans, prices US$ per 1M tokens).
 
-- Modality requirements → `architecture.input_modalities`
-- Tool/structured output → `supported_parameters` includes `tools` / `structured_outputs`
-- Context → `context_length >= user_minimum`
-- Budget → `pricing.prompt` and `pricing.completion` within ceiling
-- Open-weights only → filter out `openai/`, `anthropic/`, `google/` (proprietary), keep `meta-llama/`, `deepseek/`, `qwen/`, `mistralai/`, etc.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py models --cap <flag> [--cap ...] --min-context N --max-in X --max-out Y [--author a --author b] --sort price --limit 15 --table
+```
+
+- Modalities: `--cap vision`, `--cap audio-in`, `--cap image-out`, `--cap file-in`
+- Tools / structured output: `--cap tools`, `--cap structured`, `--cap json`
+- Reasoning: `--cap reasoning` (or `reasoning-off` if it must be switchable, `no-reasoning` for fast non-thinking models)
+- Context / budget: `--min-context`, `--max-in`, `--max-out`; batch-eligible: `--batch`; recent: `--days N`
+- Open-weights only: no flag exists. Use `--author` with open families (`meta-llama`, `deepseek`, `qwen`, `mistralai`, ...), or check `hf` in the output (non-null suggests open weights).
+- All flags: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py capabilities`. Routers are hidden by default; null-priced rows are billed per request, so check `token_priced`.
+
+For quality ranking among the survivors, check `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py benchmarks <agentic|coding|intelligence> --limit 0` and match IDs; for speed, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py performance -q <id>`; for real-world adoption, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py trending`. These scrape openrouter.ai/rankings (undocumented, may break; say so and continue without if they fail). For provider price/uptime, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orexplorer.py endpoints <id>`.
 
 ### Step 3: Rank and present
 
@@ -58,7 +65,7 @@ End by offering: "Want a head-to-head comparison of these picks, or a deeper eva
 
 ## Notes
 
-- Do not recommend models from memory. Always fetch the catalog — it changes weekly.
-- For agentic workflows, prioritize models with `tools` in `supported_parameters`. Mention if a candidate lacks this.
-- Free-tier models (`pricing.*: "0"`) usually have stricter rate limits and lower availability — flag this when recommending one.
+- Do not recommend models from memory. Always query the CLI — the catalog changes weekly.
+- For agentic workflows, prioritize models with the `tools` cap. Mention if a candidate lacks this.
+- Free-tier models (`:free`, price 0) usually have stricter rate limits and lower availability — flag this when recommending one.
 - If the user's requirements rule out everything in the catalog, say so plainly and suggest relaxing one constraint.

@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.1"
 BASE = "https://openrouter.ai"
 UA = {"User-Agent": f"orexplorer/{VERSION}", "Accept": "application/json"}
 CACHE = Path(os.environ.get("OREXPLORER_CACHE", Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "orexplorer"))
@@ -139,6 +139,44 @@ def per_m(v) -> float | None:
     return None if f < 0 else round(f * 1e6, 4)
 
 
+def reasoning_mode(m) -> str:
+    """none: no reasoning. optional: thinking can be switched off. mandatory: cannot."""
+    rr = m.get("reasoning")
+    if rr and rr.get("mandatory"):
+        return "mandatory"
+    if not rr and "reasoning" not in _params(m):
+        return "none"
+    return "optional"
+
+
+def json_mode(m) -> str | None:
+    return "schema" if "structured_outputs" in _params(m) else "object" if "response_format" in _params(m) else None
+
+
+def peak_prices(m):
+    """Highest (in, out) across time-of-day pricing overrides, or None if the price never changes."""
+    o = (m.get("pricing") or {}).get("overrides") or []
+    if not o:
+        return None
+    top = max(o, key=lambda x: float(x.get("completion") or 0))
+    pk = (per_m(top.get("prompt")), per_m(top.get("completion")))
+    base = (per_m(m["pricing"].get("prompt")), per_m(m["pricing"].get("completion")))
+    return pk if pk != base else None
+
+
+def job_tokens(a):
+    """Job size from --est-in/--est-out or --items x --in-per-item/--out-per-item; (0, 0) if unset."""
+    if getattr(a, "items", 0):
+        return a.items * a.in_per_item, a.items * a.out_per_item
+    return getattr(a, "est_in", 0) or 0, getattr(a, "est_out", 0) or 0
+
+
+def job_cost(tin, tout, pin, pout):
+    if pin is None or pout is None or not (tin or tout):
+        return None
+    return round((tin * pin + tout * pout) / 1e6, 4)
+
+
 def slug_index(models):
     """Map canonical_slug (dated permaslug) and id -> public id."""
     idx = {}
@@ -149,7 +187,7 @@ def slug_index(models):
     return idx
 
 
-def summarise(m: dict, ids: set[str]) -> dict:
+def summarise(m: dict, byid: dict, job=(0, 0)) -> dict:
     p = m.get("pricing") or {}
     arch = m.get("architecture") or {}
     base = m["id"].split(":")[0]
@@ -157,7 +195,10 @@ def summarise(m: dict, ids: set[str]) -> dict:
     unpriced = pin == 0 and pout == 0 and not m["id"].endswith(":free")
     if unpriced:  # e.g. google/lyria-*: billed per request/output, not per token
         pin = pout = None
-    return {
+    bm = byid.get(f"{base}:batch")
+    bi, bo = (per_m(bm["pricing"].get("prompt")), per_m(bm["pricing"].get("completion"))) if bm else (None, None)
+    pk = peak_prices(m)
+    row = {
         "id": m["id"],
         "name": m.get("name"),
         "created": time.strftime("%Y-%m-%d", time.gmtime(m.get("created") or 0)),
@@ -170,10 +211,22 @@ def summarise(m: dict, ids: set[str]) -> dict:
         "input": arch.get("input_modalities"),
         "output": arch.get("output_modalities"),
         "caps": [c for c, (_, f) in CAPS.items() if c != "free" and f(m)],
-        "batch": f"{base}:batch" in ids,
+        "reasoning_mode": reasoning_mode(m),
+        "json_mode": json_mode(m),
+        "batch": f"{base}:batch" in byid,
+        "batch_input_per_m": bi,
+        "batch_output_per_m": bo,
+        "peak_input_per_m": pk[0] if pk else None,
+        "peak_output_per_m": pk[1] if pk else None,
+        "expires": m.get("expiration_date"),
         "knowledge_cutoff": m.get("knowledge_cutoff"),
         "hf": m.get("hugging_face_id") or None,
     }
+    if job[0] or job[1]:
+        row["est_sync"] = job_cost(*job, pin, pout)
+        row["est_batch"] = job_cost(*job, bi, bo)
+        row["est_peak"] = job_cost(*job, *pk) if pk else None
+    return row
 
 
 def emit(rows, args, cols=None):
@@ -199,9 +252,16 @@ def emit(rows, args, cols=None):
 
 # ---------- commands ----------
 
+def price_key(job):
+    wi, wo = job if (job[0] or job[1]) else (1, 3)  # default: bulk-ish, output-heavy mix
+    return lambda r: (r["input_per_m"] is None, wi * (r["input_per_m"] or 0) + wo * (r["output_per_m"] or 0))
+
+
 def cmd_models(a):
     models = catalogue()
-    ids = {m["id"] for m in models}
+    byid = {m["id"]: m for m in models}
+    ids = byid
+    job = job_tokens(a)
     out = []
     if "free" in a.cap:
         a.cap = [c for c in a.cap if c != "free"]
@@ -229,7 +289,9 @@ def cmd_models(a):
             continue
         if since and (m.get("created") or 0) < since:
             continue
-        s = summarise(m, ids)
+        if a.no_expiring and m.get("expiration_date"):
+            continue
+        s = summarise(m, byid, job)
         if mid.startswith("openrouter/") and not a.aliases:
             continue  # routers (openrouter/auto, openrouter/free): not a model
         if a.max_in is not None and (s["input_per_m"] is None or s["input_per_m"] > a.max_in):
@@ -238,7 +300,7 @@ def cmd_models(a):
             continue
         out.append(s)
     key = {
-        "price": lambda r: (r["input_per_m"] is None, (r["input_per_m"] or 0) + 3 * (r["output_per_m"] or 0)),
+        "price": price_key(job),
         "context": lambda r: -(r["context"] or 0),
         "new": lambda r: r["created"],
         "name": lambda r: r["id"],
@@ -247,7 +309,8 @@ def cmd_models(a):
     total = len(out)
     out = out[: a.limit] if a.limit else out
     if a.table:
-        emit(out, a, ["id", "created", "context", "input_per_m", "output_per_m", "batch", "caps"])
+        emit(out, a, ["id", "created", "context", "input_per_m", "output_per_m", "batch"]
+             + (["est_sync", "est_batch"] if job[0] or job[1] else ["caps"]))
         print(f"{total} match(es); prices US$ per 1M tokens", file=sys.stderr)
     else:
         emit({"count": total, "shown": len(out), "models": out}, a)
@@ -255,17 +318,95 @@ def cmd_models(a):
 
 def cmd_model(a):
     models = catalogue()
-    ids = {m["id"] for m in models}
+    byid = {m["id"]: m for m in models}
+    ids = byid
     hit = next((m for m in models if m["id"] == a.id or m.get("canonical_slug") == a.id), None)
     if not hit:
         near = [m["id"] for m in models if a.id.lower() in m["id"].lower()][:10]
         die(f"no model {a.id!r}" + (f"; did you mean: {', '.join(near)}" if near else ""))
     base = hit["id"].split(":")[0]
-    rec = {"summary": summarise(hit, ids), "variants": sorted(i for i in ids if i.split(":")[0] == base and i != hit["id"])}
+    rec = {"summary": summarise(hit, byid, job_tokens(a)), "variants": sorted(i for i in ids if i.split(":")[0] == base and i != hit["id"])}
     if not a.brief:
         rec["record"] = hit
         rec["batch_record"] = next((m for m in models if m["id"] == f"{base}:batch"), None)
     emit(rec, a)
+
+
+def cmd_batch(a):
+    """Every model with a :batch variant, batch vs sync price at the job's token mix."""
+    models = catalogue()
+    byid = {m["id"]: m for m in models}
+    job = job_tokens(a)
+    wi, wo = job if (job[0] or job[1]) else (1e6, 1e6)
+    rows = []
+    for m in models:
+        if not m["id"].endswith(":batch"):
+            continue
+        base = m["id"].removesuffix(":batch")
+        if a.terms and not any(t in base for t in a.terms):
+            continue
+        sync = byid.get(base)
+        bi, bo = per_m(m["pricing"].get("prompt")), per_m(m["pricing"].get("completion"))
+        si, so = (per_m(sync["pricing"].get("prompt")), per_m(sync["pricing"].get("completion"))) if sync else (None, None)
+        cb, cs = job_cost(wi, wo, bi, bo), job_cost(wi, wo, si, so)
+        cheaper = "?" if cs is None else "batch" if cb < cs else "sync" if cs < cb else "same"
+        row = {"id": base, "batch_input_per_m": bi, "batch_output_per_m": bo, "input_per_m": si, "output_per_m": so,
+               "cheaper": cheaper, "reasoning_mode": reasoning_mode(m), "json_mode": json_mode(m),
+               "context": m.get("context_length")}
+        if job[0] or job[1]:
+            row["est_batch"], row["est_sync"] = job_cost(*job, bi, bo), job_cost(*job, si, so)
+        rows.append(row)
+    if a.dearer_only:
+        rows = [r for r in rows if r["cheaper"] == "sync"]
+    rows.sort(key=lambda r: (r["batch_input_per_m"] or 0) + (r["batch_output_per_m"] or 0))
+    n = len(rows)
+    rows = rows[: a.limit] if a.limit else rows
+    if a.table:
+        emit(rows, a, ["id", "batch_input_per_m", "batch_output_per_m", "input_per_m", "output_per_m", "cheaper",
+                       "reasoning_mode", "json_mode"] + (["est_batch", "est_sync"] if job[0] or job[1] else []))
+        print(f"{n} batch models; US$ per 1M tokens. A batch job runs on the base id via POST /api/v1/batches.",
+              file=sys.stderr)
+    else:
+        emit({"count": n, "shown": len(rows), "note": "batch job runs on the base id via POST /api/v1/batches",
+              "models": rows}, a)
+
+
+def cmd_bulk(a):
+    """Sync models fit for bulk work: paid, text out only, not expiring, JSON mode, reasoning can be off."""
+    models = catalogue()
+    byid = {m["id"]: m for m in models}
+    job = job_tokens(a)
+    rows = []
+    for m in models:
+        mid = m["id"]
+        if mid.endswith((":batch", ":free")) or mid.startswith("openrouter/") or (mid.startswith("~") and not a.aliases):
+            continue
+        if _out(m) != {"text"} or m.get("expiration_date"):
+            continue
+        if reasoning_mode(m) == "mandatory" and not a.reasoning_ok:
+            continue
+        if json_mode(m) is None and not a.no_json:
+            continue
+        if a.terms and not any(t in mid for t in a.terms):
+            continue
+        if a.min_context and (m.get("context_length") or 0) < a.min_context:
+            continue
+        s = summarise(m, byid, job)
+        if not s["input_per_m"] or not s["output_per_m"]:
+            continue
+        if s["output_per_m"] > a.max_out or (a.max_in and s["input_per_m"] > a.max_in):
+            continue
+        rows.append(s)
+    rows.sort(key=price_key(job))
+    n = len(rows)
+    rows = rows[: a.limit] if a.limit else rows
+    if a.table:
+        emit(rows, a, ["id", "input_per_m", "output_per_m", "peak_output_per_m", "reasoning_mode", "json_mode",
+                       "context", "created", "batch"] + (["est_sync", "est_peak"] if job[0] or job[1] else []))
+        print(f"{n} candidates. Listing claims only: probe a shortlist before use.", file=sys.stderr)
+    else:
+        emit({"count": n, "shown": len(rows), "note": "listing claims only; probe a shortlist before use",
+              "models": rows}, a)
 
 
 def cmd_endpoints(a):
@@ -280,6 +421,7 @@ def cmd_endpoints(a):
             "uptime_30m": e.get("uptime_last_30m"), "status": e.get("status"),
             "params": e.get("supported_parameters"),
         })
+    rows.sort(key=lambda r: (r["input_per_m"] is None, (r["input_per_m"] or 0) + (r["output_per_m"] or 0)))
     if a.table:
         emit(rows, a, ["provider", "quantization", "context", "input_per_m", "output_per_m", "uptime_30m"])
     else:
@@ -381,9 +523,16 @@ def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--table", action="store_true", help="human-readable table instead of JSON")
     common.add_argument("--compact", action="store_true", help="single-line JSON")
+    est = argparse.ArgumentParser(add_help=False)
+    g = est.add_argument_group("job cost estimate (adds est_* fields; price sort uses this token mix)")
+    g.add_argument("--est-in", type=float, default=0, help="job input tokens")
+    g.add_argument("--est-out", type=float, default=0, help="job output tokens")
+    g.add_argument("--items", type=int, default=0, help="item count, with --in-per-item and --out-per-item")
+    g.add_argument("--in-per-item", type=float, default=0)
+    g.add_argument("--out-per-item", type=float, default=0)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    m = sub.add_parser("models", parents=[common], help="filter the catalogue")
+    m = sub.add_parser("models", parents=[common, est], help="filter the catalogue")
     m.add_argument("-q", help="substring in id, name or description")
     m.add_argument("--cap", action="append", default=[], choices=sorted(CAPS),
                    help="require a capability (repeatable); see `capabilities`")
@@ -396,15 +545,34 @@ def main(argv=None):
     m.add_argument("--free", action="store_true", help="only :free variants")
     m.add_argument("--include-free", action="store_true", help="include :free variants alongside paid")
     m.add_argument("--aliases", action="store_true", help="include ~ aliases and variable-price routers (openrouter/auto)")
+    m.add_argument("--no-expiring", action="store_true", help="drop models with an expiration_date")
     m.add_argument("--sort", choices=["price", "context", "new", "name"], default="price",
-                   help="price = input + 3x output (default)")
+                   help="price = input + 3x output, or the job's token mix when given (default)")
     m.add_argument("--limit", type=int, default=25, help="0 = all (default 25)")
     m.set_defaults(fn=cmd_models)
 
-    s = sub.add_parser("model", parents=[common], help="one model: summary, variants, full record")
+    s = sub.add_parser("model", parents=[common, est], help="one model: summary, variants, full record")
     s.add_argument("id")
     s.add_argument("--brief", action="store_true", help="summary and variants only")
     s.set_defaults(fn=cmd_model)
+
+    bt = sub.add_parser("batch", parents=[common, est], help="models with a :batch variant: batch vs sync price, which is cheaper")
+    bt.add_argument("terms", nargs="*", help="substring filters on the id")
+    bt.add_argument("--dearer-only", action="store_true", help="only models where batch costs more than sync")
+    bt.add_argument("--limit", type=int, default=0, help="0 = all (default)")
+    bt.set_defaults(fn=cmd_batch)
+
+    bk = sub.add_parser("bulk", parents=[common, est],
+                        help="sync models fit for bulk jobs: paid, text-only out, JSON mode, reasoning can be off, not expiring")
+    bk.add_argument("terms", nargs="*", help="substring filters on the id")
+    bk.add_argument("--max-out", type=float, default=2.0, help="max output US$/1M (default 2)")
+    bk.add_argument("--max-in", type=float, default=0)
+    bk.add_argument("--min-context", type=int, default=0)
+    bk.add_argument("--reasoning-ok", action="store_true", help="keep models whose reasoning cannot be switched off")
+    bk.add_argument("--no-json", action="store_true", help="keep models with no JSON mode")
+    bk.add_argument("--aliases", action="store_true", help="keep ~vendor/*-latest aliases (listed price unreliable)")
+    bk.add_argument("--limit", type=int, default=25, help="0 = all (default 25)")
+    bk.set_defaults(fn=cmd_bulk)
 
     e = sub.add_parser("endpoints", parents=[common], help="providers serving a model, with prices")
     e.add_argument("id")

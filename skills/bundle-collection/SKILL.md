@@ -12,7 +12,8 @@ Find the data folder (see `shared/settings.md`: `$HF_RESEARCH_HOME`, `$CLAUDE_US
 Input: a list of Hub references and, in the user's words, what they're for ("TTS models I'm
 weighing", "Hebrew ASR datasets to train on"). Output: one collection that holds exactly those
 items, described by that purpose. Distinct from `collections`, which files the user's own repos by
-what they are; here the purpose is the organising idea.
+what they are; here the purpose is the organising idea. To pull the links out of a page, text or tabs first, or to
+stage them for later, use `gather-collection-links`; it hands the list back here.
 
 ```bash
 S="${CLAUDE_PLUGIN_ROOT}/scripts/hf-hub.py"

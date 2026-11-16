@@ -12,6 +12,8 @@ Token: $HF_TOKEN, else ~/.cache/huggingface/token. Output is JSON on stdout.
   hf-hub.py collections <owner>                    owner's collections with their items
   hf-hub.py collection-new <owner> <title> <public|private> [description]
   hf-hub.py collection-add <collection-slug> <dataset|model|space|paper> <owner/name|arxiv-id> [note]
+  hf-hub.py extract    <file|-|URL> [...] [--resolve]   every Hub/arXiv reference in text, Markdown, HTML or a
+                                                   web page, deduplicated, in order; --resolve checks each
   hf-hub.py resolve    <url|owner/name|arxiv-id> ...  type, canonical id, exists, private, summary for each
                                                    (bare owner/name tries model, dataset, space in that order)
   hf-hub.py collection <collection-slug>          one collection: title, description, items with item_id
@@ -249,6 +251,58 @@ def resolve_one(ref):
                     "description": (d.get("description") or "")[:300] or None,
                     "tags": [t for t in d.get("tags", []) if ":" not in t][:12]}
     return {"ref": ref, "id": rid, "tried": kinds, "exists": False, "http": code}
+
+
+HUB_RESERVED = {"docs", "blog", "learn", "tasks", "pricing", "settings", "login", "join", "api",
+                "organizations", "collections", "posts", "new", "new-dataset", "new-space", "enterprise",
+                "chat", "inference-endpoints", "terms-of-service", "privacy", "search", "notifications"}
+
+
+def extract(sources, do_resolve=False):
+    """Pull Hub and arXiv references out of text/Markdown/HTML (files, stdin or fetched pages)."""
+    import re, html as _html
+    texts = []
+    for s in sources:
+        if s == "-":
+            texts.append(sys.stdin.read())
+        elif re.match(r"https?://", s):
+            req = urllib.request.Request(s, headers={"User-Agent": "hf-hub.py extract"})
+            with urllib.request.urlopen(req, timeout=30) as f:
+                texts.append(f.read().decode("utf-8", "replace"))
+        else:
+            texts.append(Path(s).read_text(errors="replace"))
+    text = _html.unescape("\n".join(texts))
+    pat = re.compile(r"(?:https?://)?(?:www\.)?(?:huggingface\.co|hf\.co)/((?:datasets/|spaces/|models/|papers/)?[\w.-]+(?:/[\w.-]+)?)"
+                     r"|arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})")
+    seen, refs = set(), []
+    for m in pat.finditer(text):
+        if m.group(2):
+            ref = f"papers/{m.group(2)}"
+        else:
+            parts = m.group(1).rstrip(".").split("/")
+            if parts[0] == "models":
+                parts = parts[1:]
+            if not parts or not parts[0]:
+                continue
+            head = parts[0]
+            if head in HUB_RESERVED:
+                continue
+            if head == "papers":
+                if len(parts) < 2 or not re.fullmatch(r"\d{4}\.\d{4,5}(v\d+)?", parts[1]):
+                    continue
+                ref = "papers/" + re.sub(r"v\d+$", "", parts[1])
+            elif head in ("datasets", "spaces"):
+                if len(parts) < 3:
+                    continue  # bare /datasets or /datasets/<owner>: not a repo
+                ref = "/".join(parts[:3])
+            else:
+                if len(parts) < 2:
+                    continue  # profile or org page
+                ref = "/".join(parts[:2])
+        if ref.lower() not in seen:
+            seen.add(ref.lower())
+            refs.append(ref)
+    return [resolve_one(r) for r in refs] if do_resolve else {"count": len(refs), "refs": refs}
 
 
 def collection_add(slug, kind, repo_id, note=None):
@@ -601,6 +655,8 @@ def main(a):
         r = (collections if cmd == "collections" else orphans)(rest[0])
     elif cmd == "collection-new" and len(rest) >= 3 and rest[2] in ("public", "private"):
         r = collection_new(rest[0], rest[1], rest[2], " ".join(rest[3:]))
+    elif cmd == "extract" and rest:
+        r = extract([x for x in rest if x != "--resolve"], "--resolve" in rest)
     elif cmd == "resolve" and rest:
         r = [resolve_one(x) for x in rest]
     elif cmd == "collection-add" and len(rest) >= 3 and rest[1] in ITEM_KINDS:

@@ -90,6 +90,7 @@ Hugging Face Hub (task first: start from [huggingface.co/tasks](https://huggingf
 | `candidate-base-model-research` | Base models for a fine-tune: real parameter count, licence, context, formats |
 | `candidate-dataset-research` | Datasets that are, or can be turned into, training data |
 | `gated-access` | Pre-fill a gated repo's access form from your saved answers, ask before submitting |
+| `gather-collection-links` | Hub/arXiv links from text, pages, tabs or search → deduplicated, filed now or staged in an inbox |
 | `bundle-collection` | A list of Hub ids plus a purpose → a collection with notes |
 | `model-notebook` | Log a model you rate: favourites collection plus a notes dataset |
 | `setup` | Write your private Hugging Face profile (`~/.claude-user-data/hf-research/`, see `shared/settings.md`) |

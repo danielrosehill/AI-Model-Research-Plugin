@@ -44,8 +44,9 @@ All optional. A key that is unset falls back to the default shown.
 | `HF_RESEARCH_DEFAULT_OWNER` | bundle-collection, model-notebook, candidate-* (where collections go) | the token's own username |
 | `HF_RESEARCH_DEFAULT_VISIBILITY` | new collections | `private` |
 | `HF_RESEARCH_FAVOURITES_COLLECTION` | model-notebook | `Favorite Models` |
-| `HF_RESEARCH_COLLECTIONS_INBOX` | gather-collection-links | `<data folder>/collections-inbox.md` |
-| `HF_RESEARCH_COLLECTIONS_INDEX` | gather-collection-links | unset: call `collections <owner>` |
+| `HF_RESEARCH_COLLECTIONS_WORKSPACE` | gather-collection-links, expand-collection, tidy-collections, setup-collections-workspace | unset: no workspace, skills work against the Hub only |
+| `HF_RESEARCH_COLLECTIONS_INBOX` | gather-collection-links | `<workspace>/inbox.md`, else `<data folder>/collections-inbox.md` |
+| `HF_RESEARCH_COLLECTIONS_INDEX` | gather-collection-links, expand-collection | `<workspace>/snapshots/INDEX.md`, else a live `collections <owner>` |
 | `HF_RESEARCH_MODEL_NOTES_DATASET` | model-notebook | `<default owner>/Model-Notes` |
 | `HF_RESEARCH_MODEL_NOTES_SPACE` | model-notebook | unset (no Space) |
 | `HF_RESEARCH_ACCESS_FIRST_NAME`, `_LAST_NAME`, `_FULL_NAME`, `_COUNTRY`, `_AFFILIATION`, `_JOB_TITLE`, `_EMAIL`, `_WEBSITE`, `_INTENDED_USE`, `_DATE_OF_BIRTH` | gated-access | unset: asked for, then offered for saving |

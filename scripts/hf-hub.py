@@ -13,7 +13,15 @@ Token: $HF_TOKEN, else ~/.cache/huggingface/token. Output is JSON on stdout.
   hf-hub.py collection-new <owner> <title> <public|private> [description]
   hf-hub.py collection-add <collection-slug> <dataset|model|space|paper> <owner/name|arxiv-id> [note]
   hf-hub.py extract    <file|-|URL> [...] [--resolve]   every Hub/arXiv reference in text, Markdown, HTML or a
-                                                   web page, deduplicated, in order; --resolve checks each
+                                                   web page, deduplicated, in order; --resolve checks each.
+                                                   Hub listing URLs (models?pipeline_tag=...&other=...) come back
+                                                   separately under "searches"
+  hf-hub.py related    <ref> [--limit N] [--co N]  neighbours of one model/dataset/Space/paper, by relation:
+                                                   base model, derivatives (fine-tunes, quants), training data,
+                                                   models trained on it, Spaces using it, repos citing a paper,
+                                                   and items from other people's collections that hold it
+  hf-hub.py audit      <owner|snapshot.json>     collection hygiene: empty, singletons, no description,
+                                                   duplicate titles, overlapping pairs, items with no note
   hf-hub.py resolve    <url|owner/name|arxiv-id> ...  type, canonical id, exists, private, summary for each
                                                    (bare owner/name tries model, dataset, space in that order)
   hf-hub.py collection <collection-slug>          one collection: title, description, items with item_id
@@ -104,10 +112,11 @@ def token():
     return t
 
 
-def call(method, path, body=None, full_url=None):
+def call(method, path, body=None, full_url=None, auth=True):
     req = urllib.request.Request(full_url or API + path, method=method,
                                  data=json.dumps(body).encode() if body is not None else None)
-    req.add_header("Authorization", f"Bearer {token()}")
+    if auth:
+        req.add_header("Authorization", f"Bearer {token()}")
     if body is not None:
         req.add_header("Content-Type", "application/json")
     try:
@@ -116,6 +125,10 @@ def call(method, path, body=None, full_url=None):
                 return r.status, (parse(r.read()), r.headers.get("Link"))
             return r.status, parse(r.read())
     except urllib.error.HTTPError as e:
+        # A fine-grained token can get 403 on someone else's *public* collection (seen 2026-11-17 on
+        # nvidia/parakeet-asr-...; anonymous GET returned it). Retry reads once without the token.
+        if method == "GET" and auth and e.code in (401, 403):
+            return call(method, path, body, full_url, auth=False)
         return e.code, parse(e.read())
 
 
@@ -203,6 +216,8 @@ def collections(owner):
     for c in paged(f"/collections?owner={owner}&limit=100"):
         _, d = call("GET", f"/collections/{c['slug']}")
         res.append({"slug": c["slug"], "title": c["title"], "private": c.get("private"),
+                    "description": d.get("description"), "upvotes": d.get("upvotes"),
+                    "last_updated": d.get("lastUpdated"),
                     "items": [{"type": i["type"], "id": i["id"], "note": (i.get("note") or {}).get("text")}
                               for i in d.get("items", [])]})
     return {"owner": owner, "collections": res}
@@ -274,6 +289,16 @@ def extract(sources, do_resolve=False):
     text = _html.unescape("\n".join(texts))
     pat = re.compile(r"(?:https?://)?(?:www\.)?(?:huggingface\.co|hf\.co)/((?:datasets/|spaces/|models/|papers/)?[\w.-]+(?:/[\w.-]+)?)"
                      r"|arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})")
+    # Hub listing URLs (models?pipeline_tag=..., models?other=..., datasets?task_categories=...) are
+    # search leads, not items: returned separately as {kind, params} for `search` to run.
+    searches, sseen = [], set()
+    for m in re.finditer(r"(?:huggingface\.co|hf\.co)/(models|datasets|spaces)\?([^\s\"'<>)\]]+)", text):
+        params = {k: v for k, v in urllib.parse.parse_qsl(m.group(2)) if v}
+        key = (m.group(1), tuple(sorted(params.items())))
+        if params and key not in sseen:
+            sseen.add(key)
+            searches.append({"kind": m.group(1).rstrip("s"), "params": params,
+                             "url": f"https://huggingface.co/{m.group(1)}?{urllib.parse.urlencode(params)}"})
     seen, refs = set(), []
     for m in pat.finditer(text):
         if m.group(2):
@@ -302,7 +327,87 @@ def extract(sources, do_resolve=False):
         if ref.lower() not in seen:
             seen.add(ref.lower())
             refs.append(ref)
-    return [resolve_one(r) for r in refs] if do_resolve else {"count": len(refs), "refs": refs}
+    items = [resolve_one(r) for r in refs] if do_resolve else refs
+    return {"count": len(refs), "refs": items, "searches": searches}
+
+
+def _ids(path):
+    code, d = call("GET", path)
+    d = d[0] if isinstance(d, tuple) else d  # call() returns (body, Link) for paged GETs
+    return [x["id"] for x in d] if code == 200 and isinstance(d, list) else []
+
+
+def related(ref, limit=8, co=3):
+    """Neighbours of one Hub item, grouped by how they relate. No ranking beyond the Hub's own sort."""
+    r = resolve_one(ref)
+    if not r.get("exists"):
+        return {"seed": r, "error": "not found"}
+    kind, rid, out = r["type"], r["id"], {}
+    q = lambda x: urllib.parse.quote(x, safe="/:")
+    if kind == "model":
+        _, d = call("GET", f"/models/{rid}")
+        card = d.get("cardData") or {}
+        base = card.get("base_model")
+        out["base_model"] = base if isinstance(base, list) else ([base] if base else [])
+        ds = card.get("datasets")
+        out["trained_on"] = ds if isinstance(ds, list) else ([ds] if ds else [])
+        out["derivatives"] = _ids(f"/models?filter=base_model:{q(rid)}&sort=downloads&limit={limit}")
+        out["spaces_using"] = _ids(f"/spaces?models={q(rid)}&sort=likes&limit={limit}")
+    elif kind == "dataset":
+        out["models_trained_on_it"] = _ids(f"/models?filter=dataset:{q(rid)}&sort=downloads&limit={limit}")
+        out["spaces_using"] = _ids(f"/spaces?datasets={q(rid)}&sort=likes&limit={limit}")
+    elif kind == "space":
+        _, d = call("GET", f"/spaces/{rid}")
+        out["models_used"] = d.get("models", [])[:limit]
+        out["datasets_used"] = d.get("datasets", [])[:limit]
+    elif kind == "paper":
+        out["models_citing"] = _ids(f"/models?filter=arxiv:{rid}&sort=downloads&limit={limit}")
+        out["datasets_citing"] = _ids(f"/datasets?filter=arxiv:{rid}&sort=downloads&limit={limit}")
+        out["spaces_citing"] = _ids(f"/spaces?filter=arxiv:{rid}&sort=likes&limit={limit}")
+    if kind != "paper" and co:
+        cols = []
+        code, lst = call("GET", f"/collections?item={KINDS[kind]}/{q(rid)}&sort=upvotes&limit={co}")
+        lst = lst[0] if isinstance(lst, tuple) else lst
+        for c in (lst if code == 200 and isinstance(lst, list) else [])[:co]:
+            _, full = call("GET", f"/collections/{c['slug']}")
+            cols.append({"slug": c["slug"], "title": c["title"], "upvotes": c.get("upvotes"),
+                         "items": [f"{i['type']}:{i['id']}" for i in full.get("items", [])
+                                   if (i["type"], i["id"]) != (kind, rid)][:25]})
+        out["co_collected"] = cols
+    return {"seed": {"type": kind, "id": rid}, "related": out}
+
+
+def audit(src):
+    """Hygiene report over an owner's collections (live, or a saved `collections` JSON)."""
+    import re
+    data = json.loads(Path(src).read_text()) if src.endswith(".json") else collections(src)
+    cols = data["collections"]
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+    sets = {c["slug"]: {(i["type"], i["id"]) for i in c["items"]} for c in cols}
+    titles = {}
+    for c in cols:
+        titles.setdefault(norm(c["title"]), []).append(c["slug"])
+    overlaps = []
+    for i, a in enumerate(cols):
+        for b in cols[i + 1:]:
+            sa, sb = sets[a["slug"]], sets[b["slug"]]
+            if len(sa) >= 2 and len(sb) >= 2:
+                inter = len(sa & sb)
+                small = min(len(sa), len(sb))
+                if inter and inter / small >= 0.5:
+                    overlaps.append({"a": a["title"], "b": b["title"], "shared": inter,
+                                     "of_smaller": small, "a_slug": a["slug"], "b_slug": b["slug"]})
+    brief = lambda c: {"title": c["title"], "slug": c["slug"], "items": len(c["items"])}
+    return {
+        "owner": data.get("owner"), "collections": len(cols),
+        "empty": [brief(c) for c in cols if not c["items"]],
+        "singletons": [brief(c) for c in cols if len(c["items"]) == 1],
+        "no_description": [brief(c) for c in cols if "description" in c and not c.get("description")],
+        "duplicate_titles": [v for v in titles.values() if len(v) > 1],
+        "overlapping": sorted(overlaps, key=lambda o: -o["shared"]),
+        "items_without_note": sum(1 for c in cols for i in c["items"] if not i.get("note")),
+        "items_total": sum(len(c["items"]) for c in cols),
+    }
 
 
 def collection_add(slug, kind, repo_id, note=None):
@@ -655,6 +760,10 @@ def main(a):
         r = (collections if cmd == "collections" else orphans)(rest[0])
     elif cmd == "collection-new" and len(rest) >= 3 and rest[2] in ("public", "private"):
         r = collection_new(rest[0], rest[1], rest[2], " ".join(rest[3:]))
+    elif cmd == "related" and rest:
+        r = related(rest[0], int(opt(rest, "--limit") or 8), int(opt(rest, "--co") or 3))
+    elif cmd == "audit" and rest:
+        r = audit(rest[0])
     elif cmd == "extract" and rest:
         r = extract([x for x in rest if x != "--resolve"], "--resolve" in rest)
     elif cmd == "resolve" and rest:

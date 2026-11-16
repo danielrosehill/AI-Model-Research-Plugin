@@ -11,10 +11,12 @@ Find the data folder (see `shared/settings.md`). Read `profile.env` and `gather-
 they exist; they win over the defaults below. Keys used here:
 
 - `HF_RESEARCH_DEFAULT_OWNER`: whose collections (default: the token's user).
-- `HF_RESEARCH_COLLECTIONS_INBOX`: path to the staging file (default: `<data folder>/collections-inbox.md`).
-  If the inbox lives in a git repo, commit and push after each change to it.
-- `HF_RESEARCH_COLLECTIONS_INDEX`: optional path to a Markdown index of the owner's collections (title, slug),
-  read instead of calling `collections <owner>`, which costs one API call per collection.
+- `HF_RESEARCH_COLLECTIONS_WORKSPACE`: the user's collections repo (`setup-collections-workspace` makes one). Its
+  `inbox.md` is the staging file and its `snapshots/INDEX.md` the list of existing collections. Commit and push
+  after each change to it.
+- `HF_RESEARCH_COLLECTIONS_INBOX` / `HF_RESEARCH_COLLECTIONS_INDEX`: override those two paths. With no workspace and
+  no override, the inbox is `<data folder>/collections-inbox.md` and the index is a live `collections <owner>` call
+  (one API call per collection).
 
 ```bash
 S="${CLAUDE_PLUGIN_ROOT}/scripts/hf-hub.py"
@@ -56,7 +58,7 @@ no stated purpose, ask once for the batch, not per link. Then pick the target:
 ## 4. File now or stage
 
 - **File now** when the user asked to add or bundle, or the target is clear: hand the list, purpose and target
-  to `bundle-collection` (it creates or updates, writes per-item notes, reads back).
+  to `bundle-collection` (or to `expand-collection` if they also want what they missed) (it creates or updates, writes per-item notes, reads back).
 - **Stage** when the user says "save", "stage", "for later", or the target is undecided: append to the inbox,
   under one `##` heading per target (an existing slug, `NEW: <Title>` or `UNSORTED`):
 
